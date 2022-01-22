@@ -1,0 +1,202 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+library(wooldridge)
+library(tidyverse)
+library(stargazer)  
+library(lmtest)
+library(AER)
+```
+
+```{r}
+data("fertil2")
+view(fertil2)
+```
+
+## 1. Estimate the model
+## children=β0+β1educ+β2age+β3age2+u
+## by OLS and interpret the estimates. In particular, holding age fixed, what is the estimated effect of another year of education on fertility? If 100 women receive another year of education, how many fewer children are they expected to have?
+
+```{r}
+m1 <- lm(children ~ educ + age + agesq, data = fertil2)
+stargazer(m1, type = 'text')
+summary(m1)
+```
+On estime que pour un an d'éducation supplémentaire, le nombre d'enfants de la personne concernée est réduit de 0,091.
+Si 100 femmes reçoivent une année supplémentaire d'éducation, elles devraient avoir environ 9 enfants en moins car 0,091x100=9,1.
+
+## 2. Is there a possible endogeneity in one of the variables of the model? If so, why? what type of endogeneity do you encounter?
+
+La variable educ est endogène dans ce modèle : on cherche à expliquer la variable children à partir de la variable educ, alors que le nombre d'enfants (children) peut aussi influencer le nombre d'années d'études (educ). La source d'endogénéité est la simultanéité. 
+
+## 3. The variable frsthalf is a dummy variable equal to one if the woman was born during the first six months of the year. Do you think frsthalf is uncorrelated with the error term (exogenous) from the model in Q1?
+
+On estime que la variable frsthalf (femme née dans les 6 premiers mois de l'année) n'est pas corrélée avec l'erreur du modèle m1.
+
+## 4. Assuming that frsthalf is uncorrelated with the error term from Q1, show that frsthalf is a reasonable IV candidate for educ. (Hint: You need to do a regression.)
+
+```{r}
+m2 <- lm(educ ~ frsthalf, data = fertil2)
+summary(m2)
+stargazer(m2, type = 'text')
+```
+
+La variable frsthalf est négativement corrélée avec la variable endogène educ avec un coefficient égal à -0,938 (significatif à 1%). La variable frsthalf est donc une bonne "IV regression candidate" pour educ. 
+
+## 5. Estimate the model from Q1 by using frsthalf as an IV for educ. Compare the estimated effect of education with the OLS estimate from Q1. Was βeduc under or over estimated in the OLS model?
+
+```{r}
+ivm <- ivreg(children ~ educ + age + agesq | frsthalf + age + agesq, data = fertil2)
+stargazer(ivm, type = 'text')
+summary(ivm)
+```
+Le βeduc a été sous estimé, dans le modelèle OLS (-O,091 dans le modèle OLS contre -0,171 ici) et est significatif.
+
+## 6. Add the binary variables electric, tv , and bicycle to the model and assume these are exogenous. Estimate the equation by OLS and 2SLS and compare the estimated coefficients on educ. Interpret the coefficient on tv and explain why television ownership has a negative effect on fertility.
+
+```{r}
+m3 <- lm(children ~ educ + age + agesq + electric + tv + bicycle, data = fertil2)
+stargazer(m3, type = 'text')
+summary(m3)
+```
+
+```{r}
+ivm2 <- ivreg(children ~ educ + age + agesq + electric + tv + bicycle | frsthalf + age + agesq + electric + tv + bicycle, data = fertil2)
+stargazer(ivm2, type = 'text')
+summary(ivm2)
+```
+Dans le modele OLS nous avons un coeffcient educ égal a -0.077 contre -0.164 dans le modele 2SLS. Le coefficient educ est plus significatif dans le modèle 2SLS sachant que nous avons pris en compte la variable instrumentale frsthalf. Il est donc possible que la télévision distrait les couples et par conséquent réduit leur nombre de relation sexuelle.
+
+## 7. What is the average of work, finc, earn, nonwhite, ed, and age across each of these different levels of children? How are these groups different?
+
+
+```{r}
+library(tidyverse)  
+library(scales)      
+library(broom)       
+library(wooldridge)  
+library(stargazer)
+library(foreign)
+```
+
+```{r}
+knitr::opts_chunk$set(fig.align = "center", retina = 2,
+                      fig.width = 7, fig.height = 4.2)
+```
+
+```{r}
+eitc <- read.dta("eitc.dta")
+```
+
+```{r}
+eitc <- eitc %>%  mutate(children_cat = case_when(
+    children == 0 ~ "0",
+    children == 1 ~ "1",
+    children >= 2 ~ "2+"
+  ))
+```
+
+
+```{r}
+eitc %>% 
+  group_by(children_cat) %>%
+  summarise(mean(work), mean(finc), mean(earn), mean(nonwhite), mean(ed), mean(age))
+```
+Nous pouvons voir que plus le nombre d'enfants est élevé moins les femmes ont tendance a avoir un travail et moins elles ont tendance a avoir des revenus élevés.Les femmes non blanches ont tendance a avoir plus d'enfants que les autres. De plus, plus une femme a d'enfants, plus la femme est jeune lorsqu'elle donne naissance à l'enfant.
+
+## 8. Create a new variable for treatment named any_kids (should be TRUE or 1 if children > 0) and a variable for the timing named after_1993 (should be TRUE or 1 if year > 1993).
+
+
+```{r}
+eitc <- eitc %>%
+  mutate(any_kids = ifelse(children > 0, 1, 0), after_1993 = ifelse(year > 1993, 1, 0))
+```
+
+## 9. Create a new dataset that shows the average proportion of employed women (work) for every year in both the treatment and control groups (i.e.��both with and without kids).
+
+```{r}
+new_eitc = eitc %>% 
+  group_by(year,any_kids) %>% 
+  summarize(mean(work), count = n())
+```
+
+## 10. Check for the parallel trends assumption. Do the pre-treatment trends appear to be similar?
+
+On remarque que la différence entre le groupe "sans enfant" et le groupe "au moins 1 enfant" est constante dans le temps.L'hypothèse de tendance parallèle n'est pas violée donc cela ne peut pas entrainer une estimaton biaisée de l'effet causal.
+
+```{r}
+names(new_eitc)[3] <- "avg_work"
+new_eitc$any_kids <- as.factor(new_eitc$any_kids)
+new_eitc$year <- as.factor(new_eitc$year)
+ggplot(new_eitc, mapping = aes(x = year, y = avg_work, color = any_kids)) +
+    geom_point(size = 2) +
+    geom_vline(xintercept = "1994")
+```
+
+## 11. Based on the following model, run a regression to find the diff-in-diff estimate of the effect of the EITC on employment (work).
+
+```{r}
+m4 <- lm(work ~ after_1993 + any_kids + after_1993*any_kids, data = eitc)
+summary(m4)
+stargazer(m4, type = 'text')
+```
+
+## 12. What is the difference-in-difference estimate? Discuss the result.
+L'estimation "difference-in-difference" (after_1993:any_kids) est de 0.046873 (significatif à 1%). On observe donc une baisse du nombre de femmes sans emploi après l'arrivée de l'EITC. On peut en déduire que l'EITC a joué un role important dans la réduction du déséquilibre dans le travail.
+
+## 13. Run a new regression model with demographic controls. Eissa and Liebman used the following in their original study: non-labor income (family income minus personal earnings, or the unearn column), number of children, race, age, age squared, education, and education squared.
+
+```{r}
+eitc$agesq <- eitc$age**2
+eitc$edsq <- eitc$ed**2
+m5 <- lm(work ~ unearn + children + nonwhite + age + agesq +ed + edsq + after_1993 + any_kids + after_1993 * any_kids, data = eitc)
+summary(m5)
+stargazer(m5, type = 'text')
+```
+
+## 14. Does the treatment effect change? Interpret these findings.
+Oui on peut voir un changement, en effet after_1993:any_kids est passé de 0.046873 a 0.05812 ce qui signifie que l'impact démographique est significatif en ce qui concerne l'accès à l'EITC.
+
+## 15. Make two new binary indicator variables showing if the woman has one child or not and two children or not. Name them one_kid and two_plus_kids.
+
+```{r}
+eitc <- eitc %>%
+  mutate(one_kid = ifelse(
+    children == 1, 1, 0))
+eitc <- eitc %>%
+  mutate(two_plus_kids = ifelse(
+    children == 2, 1, 0))
+```
+
+## 16. Rerun the regression model with all the demographic controls, but remove the any_kids and any_kids * after_1993 terms and replace them with two new interaction terms: one_kid * after_1993 and two_plus_kids * after_1993. For which group of women is the EITC treatment the strongest for (i.e. which group sees the greatest change in employment)? Why do you think that is?
+
+```{r}
+m6 <- lm(work ~ unearn + children + nonwhite + age + agesq +ed + edsq + after_1993 + one_kid + two_plus_kids + one_kid * after_1993 + two_plus_kids * after_1993, data = eitc)
+summary(m6)
+stargazer(m6, type = 'text')
+```
+
+Le traitement de l'EITC est plus fort pour les femmes qui ont 2 enfants ou plus. C'est compréhensible si on se souvient des conditions de l'EITC: "L'EITC est un crédit d'impôt spécial pour les travailleurs à faibles revenus qui varie en fonction  du nombre d'enfants d'une famille (plus d'enfants = crédit plus élevé)"
+
+## 17. To make sure this effect isn’t driven by any pre-treatment trends, we can pretend that the EITC was expanded in 1991 (starting in 1992) instead of 1993. Create a new dataset that only includes data from 1991–1993. Create a new binary before/after indicator named after_1991. Use regression to find the diff-in-diff estimate of the EITC on work.
+
+
+```{r}
+years_filtered <- c("1991","1992","1993")
+eitc <- eitc %>%
+    filter(year %in% years_filtered)
+eitc <- eitc %>%
+  mutate(after_1991 = ifelse( year > "1991", 1, 0))
+```
+
+```{r}
+m7 <- lm(work ~ after_1991 * one_kid + after_1991 * two_plus_kids + unearn + children + nonwhite + age + agesq +ed + edsq, data = eitc)
+summary(m7)
+stargazer(m7, type="text")
+```
+
+## 18. Is there a significant effect? What does this mean for pre-treatment trends?
+
+Nous n'observons aucun effet significatif. Cela signifie qu'il n'y a pas d'effet de tendances avant 1993.
